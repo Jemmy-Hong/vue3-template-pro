@@ -1,0 +1,41 @@
+# ==============================================================================
+# service-frontend.yaml
+# 前端Service，ClusterIP，仅集群内部访问；公网流量交给ALB‑Ingress
+# ==============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: hy-frontend-svc
+  namespace: default
+  labels:
+    # k8s标准标签：组件名称，对应Deployment的app.kubernetes.io/name
+    app.kubernetes.io/name: hy-frontend
+    # k8s标准标签：部署实例名称，一套部署一个实例标识
+    app.kubernetes.io/instance: hy-frontend
+    # k8s标准标签：组件类型 frontend/backend/job/cronjob
+    app.kubernetes.io/component: frontend
+    # k8s标准标签：归属哪个大业务系统，监控/日志按业务聚合过滤
+    app.kubernetes.io/part-of: hy-business
+    # 环境标记，CI注入 dev/staging/prod，envsubst变量替换
+    environment: ${ENV}
+spec:
+  ports:
+    # service对外暴露端口：集群内访问service:80
+    - port: 80
+      # targetPort使用端口名称http，绑定pod内命名端口，不用硬编码数字
+      targetPort: http
+      # 给端口命名，ALB Ingress识别命名端口，规范写法
+      name: http
+  # ✅ selector：用来匹配Pod，只保留app名称标签！
+  # 必须和Deployment模板中pod.metadata.labels.app.kubernetes.io/name保持一致
+  selector:
+    app.kubernetes.io/name: hy-frontend
+  # ClusterIP：仅集群内部可访问，公网流量由ALB Ingress接入，EKS标准方案
+  type: ClusterIP
+# ==============================================================================
+# 📝备忘录
+# 1、禁止使用NodePort、LoadBalancer做业务Service；外部访问全部走Ingress+ALB
+# 2、targetPort引用端口名称http，不硬编码数字，容器端口变更无需修改Service
+# 3、metadata.labels标签全集建议与对应Deployment保持一致，用于监控、日志筛选聚合；删除不会导致服务故障，属于工程规范。
+# 4、spec.selector只做Pod选择，只保留name标签，part‑of/component/environment不要放到selector，否则无法匹配Pod。
+# ==============================================================================

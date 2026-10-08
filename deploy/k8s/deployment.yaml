@@ -1,0 +1,139 @@
+# ==============================================================================
+# 文件: deployment-frontend.yaml
+# 用途: K8s/EKS Vue/React前端(Nginx静态)通用生产Deployment模板，跳槽可复用
+# 兼容CI变量: DEPLOYMENT_REPLICAS(副本数占位符)、TAG(镜像版本占位符)、${ENV}(环境标识)
+# 注意: apiVersion已经升级apps/v1，旧extensions/v1beta1在k8s >=1.16已经废弃不可使用
+# ==============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hy-portal-site
+  namespace: default  # 生产建议单独namespace，测试可以用default，根据集群修改
+  labels:
+    # k8s官方标准标签，监控、日志、告警、链路追踪都会读取这套标签，生产强烈建议带上
+    app.kubernetes.io/name: hy-frontend        # 应用名称
+    app.kubernetes.io/instance: hy-frontend   # 实例名称，一套部署一个instance
+    app.kubernetes.io/component: frontend         # 组件类型：frontend/backend/db
+    app.kubernetes.io/part-of: hy-business            # 属于哪个大业务系统
+    environment: ${ENV}                            # 环境标识 dev/test/prod，CI注入变量
+spec:
+  replicas: DEPLOYMENT_REPLICAS   # pod副本数量，由CI流水线替换，不要硬编码写死
+  # apps/v1版本Deployment强制必填！selector标签必须和pod模板labels保持一致，否则报错
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hy-frontend
+  # --------------------------
+  # 滚动更新策略【生产必配】
+  # maxSurge: 更新过程最多额外拉起多少pod；maxUnavailable：更新过程最多允许多少pod不可用
+  # maxUnavailable:0 => 更新的时候不会先删掉旧pod，先拉起新pod，新pod就绪之后再删旧，前端推荐配置
+  # --------------------------
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  revisionHistoryLimit: 5  # 保留历史ReplicaSet版本数量，用于回滚，默认10，调小减少etcd存储占用
+  template:
+    metadata:
+      labels:
+        # 补齐全套标准标签，和上层metadata保持统一，方便监控/日志筛选
+        app.kubernetes.io/name: hy-frontend
+        app.kubernetes.io/instance: hy-frontend
+        app.kubernetes.io/component: frontend
+        app.kubernetes.io/part-of: hy-business
+        environment: ${ENV}
+    spec:
+      # 优雅关闭等待时间【前端nginx推荐10s】
+      # pod删除时，k8s会等待该时长再强制杀容器；nginx关闭很快，不需要后端那种30/60s
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: hy-frontend
+        image: 168824777132.dkr.ecr.ap-southeast-1.amazonaws.com/hy-frontend:TAG
+        imagePullPolicy: IfNotPresent  # 本地有镜像就不拉，没有才拉；私有ECR镜像推荐这个配置
+        ports:
+        - containerPort: 9302  # 容器内部nginx监听端口，和Dockerfile暴露端口保持一致
+          name: http           # 给端口起名字，后面探针/service直接引用名字，不用写数字，便于维护
+        # ----------------------------------------------------------------------
+        # resources资源配置【生产环境必须配置，绝对不要省略】
+        # requests：调度的时候告诉k8s这个pod最少需要多少资源，用于节点调度
+        # limits：pod最多允许使用多少资源，超过会被k8s限制CPU/杀掉OOM容器
+        # 前端静态页面消耗很低，这组是基准参考，后续看监控指标再微调，不要无脑写大数值浪费节点资源
+        # ----------------------------------------------------------------------
+        resources:
+          requests:
+            cpu: "50m"     # 50毫核，0.05核CPU
+            memory: "64Mi"  # 最小需要64M内存
+          limits:
+            cpu: "200m"    # 最大允许使用0.2核CPU
+            memory: "128Mi"# 最大允许128M内存，超过会OOM Kill
+        # ----------------------------------------------------------------------
+        # livenessProbe 存活探针【推荐配置】
+        # 判断pod是否还活着，如果探针连续失败，k8s认为容器卡死，直接重启pod
+        # 注意事项：
+        # 1.Vue/React history路由模式，nginx需要配置try_files，保证访问 / 返回index.html，否则httpGet会404
+        # 2.进阶方案：nginx单独配置 /health 健康接口，不依赖前端路由，稳定性更强
+        # ----------------------------------------------------------------------
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 5  # pod启动之后等待5秒才开始第一次探测，给nginx启动时间
+          periodSeconds: 10       # 每10秒执行一次探测
+          timeoutSeconds: 2       # 探测请求2秒没返回就判定失败
+          failureThreshold: 3     # 连续失败3次，就重启pod
+        # ----------------------------------------------------------------------
+        # readinessProbe 就绪探针【推荐配置】
+        # 判断pod是否准备好接收流量；没就绪的pod不会加入service后端，不会接收用户请求
+        # 新pod启动成功之后，就绪探针成功才会进来流量；发布的时候防止还没初始化完就切流量
+        # 优化：initialDelaySeconds上调到3s，规避节点IO波动导致启动瞬间探测失败
+        # ----------------------------------------------------------------------
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 3
+          periodSeconds: 5
+          timeoutSeconds: 2
+        # ======================================================================
+        # 👇👇👇下面全部为【按需开启配置】，默认注释，新公司看集群安全要求再打开，不要直接启用
+        # ======================================================================
+        # --------------------------
+        # env环境变量
+        # 注意：大部分打包后的Vue/React静态文件，构建阶段已经把变量打包进js，运行时env不生效！
+        # 只有容器启动阶段通过entrypoint脚本替换js内变量，才需要在这里配置configMap/secret
+        # --------------------------
+#        env:
+#        - name: VITE_API_BASE_URL
+#          valueFrom:
+#            configMapKeyRef:
+#              name: frontend-config
+#              key: api-base-url
+#        - name: SOME_SECRET
+#          valueFrom:
+#            secretKeyRef:
+#              name: frontend-secret
+#              key: secret-value
+        # --------------------------
+        # securityContext 容器安全上下文
+        # 企业合规集群会强制要求不能root运行；
+        # 警告：打开readOnlyRootFilesystem=true时，nginx需要可写/tmp /var/run，需要额外挂载emptyDir临时卷，否则nginx启动失败
+        # --------------------------
+#        securityContext:
+#          runAsNonRoot: true             # 禁止root账号运行容器
+#          readOnlyRootFilesystem: false  # 文件系统只读开关，nginx一般不建议直接开true
+      # --------------------------
+      # topologySpreadConstraints Pod拓扑分布约束【生产集群多AZ时开启，测试注释】
+      # 作用：尽量把pod打散到不同可用区(AZ)，避免单AZ故障所有前端pod全部挂掉，AWS EKS最佳实践
+      # whenUnsatisfiable: ScheduleAnyway：实在无法打散也允许调度，不会拒绝pod创建
+      # --------------------------
+#      topologySpreadConstraints:
+#        - maxSkew: 1
+#          topologyKey: topology.kubernetes.io/zone
+#          whenUnsatisfiable: ScheduleAnyway
+#          labelSelector:
+#            matchLabels:
+#              app.kubernetes.io/name: hy-frontend
+      # nodeSelector：调度到带特定标签节点，只有需要指定节点组才填，大部分前端不需要
+#      nodeSelector: {}
+      # tolerations：容忍节点污点，特殊节点组才启用
+#      tolerations: []
