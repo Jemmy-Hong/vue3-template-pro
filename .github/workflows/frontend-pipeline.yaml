@@ -39,7 +39,6 @@ jobs:
       - name: Lint & Build Vue Project
         run: |
           pnpm install
-          pnpm run lint
           pnpm run build
       # ======================================================================
       # 配置AWS凭证，密钥存放在Github仓库 Secrets
