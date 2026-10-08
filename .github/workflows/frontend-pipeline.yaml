@@ -1,11 +1,11 @@
 name: Frontend Vue3 CI/CD Pipeline
-
 on:
   push:
     branches: [main, dev] # 你实际部署分支，可改成master
   # 可开启pull_request做测试
   pull_request:
     branches: [dev]
+  workflow_dispatch:
 
 env:
   AWS_REGION: ap-southeast-1 # 和你的ACM、EKS、ECR同一个region
@@ -21,19 +21,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ============新增：流水线主机上完成Vue的依赖安装、lint、打包，生成dist============
+      # ============新增：pnpm + node 打包，适配pnpm-lock.yaml============
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: "npm"
-
+          # 删掉cache: npm，改用pnpm的cache action
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Cache pnpm modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
       - name: Lint & Build Vue Project
         run: |
-          npm install
-          npm run lint
-          npm run build
-      # ==============================================================================
+          pnpm install
+          pnpm run lint
+          pnpm run build
+      # ======================================================================
       # 配置AWS凭证，密钥存放在Github仓库 Secrets
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
