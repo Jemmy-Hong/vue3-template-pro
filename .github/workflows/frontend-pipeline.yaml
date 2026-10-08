@@ -21,6 +21,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # ============新增：流水线主机上完成Vue的依赖安装、lint、打包，生成dist============
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Lint & Build Vue Project
+        run: |
+          npm install
+          npm run lint
+          npm run build
+      # ==============================================================================
       # 配置AWS凭证，密钥存放在Github仓库 Secrets
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
