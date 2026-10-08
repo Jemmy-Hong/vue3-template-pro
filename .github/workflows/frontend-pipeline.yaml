@@ -10,7 +10,7 @@ on:
 env:
   AWS_REGION: ap-southeast-1 # 和你的ACM、EKS、ECR同一个region
   ECR_REPOSITORY: hy-frontend # 你的ECR仓库名称
-  EKS_CLUSTER_NAME: your-eks-cluster-name # ⚠️替换成你的EKS集群名字
+  EKS_CLUSTER_NAME: eks-demo # ⚠️替换成你的EKS集群名字
   NAMESPACE: default # 和ingress/service/deployment同一个namespace
   IMAGE_TAG: ${{ github.sha }} # 使用git commit sha作为镜像tag，便于追溯
 
