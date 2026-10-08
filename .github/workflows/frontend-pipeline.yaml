@@ -1,0 +1,56 @@
+name: Frontend Vue3 CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, dev] # 你实际部署分支，可改成master
+  # 可开启pull_request做测试
+  pull_request:
+    branches: [dev]
+
+env:
+  AWS_REGION: ap-southeast-1 # 和你的ACM、EKS、ECR同一个region
+  ECR_REPOSITORY: hy-frontend # 你的ECR仓库名称
+  EKS_CLUSTER_NAME: your-eks-cluster-name # ⚠️替换成你的EKS集群名字
+  NAMESPACE: default # 和ingress/service/deployment同一个namespace
+  IMAGE_TAG: ${{ github.sha }} # 使用git commit sha作为镜像tag，便于追溯
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 配置AWS凭证，密钥存放在Github仓库 Secrets
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 获取ECR登录密码，登录docker
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 构建 & 推送镜像到ECR
+      - name: Build, tag, and push docker image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:${{ env.IMAGE_TAG }} .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:${{ env.IMAGE_TAG }}
+
+      # 获取EKS kubeconfig，让kubectl可以操作集群
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+      # 更新Deployment镜像，滚动更新Pod
+      - name: Deploy new image to EKS
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          kubectl set image deployment/hy-frontend-deploy hy-frontend-container=$ECR_REGISTRY/$ECR_REPOSITORY:${{ env.IMAGE_TAG }} -n ${{ env.NAMESPACE }}
+          kubectl rollout status deployment/hy-frontend-deploy -n ${{ env.NAMESPACE }}
