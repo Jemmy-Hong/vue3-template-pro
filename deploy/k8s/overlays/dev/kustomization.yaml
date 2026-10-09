@@ -9,9 +9,13 @@ namespace: default # kustomize会把所有资源自动注入这个namespace, 真
 
 # dev副本数
 replicas:
-  - name: hy-portal-site
+  - name: hy-frontend
     count: 1
 
 # 给资源打上环境标签 dev
 commonLabels:
   environment: dev
+
+images:
+  - name: frontend-img
+    newName: temp-ci-will-override

@@ -47,7 +47,7 @@ spec:
       terminationGracePeriodSeconds: 10
       containers:
       - name: hy-frontend
-        image: FRONTEND_IMAGE_ADDR
+        image: frontend-img
         imagePullPolicy: IfNotPresent  # 本地有镜像就不拉，没有才拉；私有ECR镜像推荐这个配置
         ports:
         - containerPort: 3030  # 容器内部nginx监听端口，和Dockerfile暴露端口保持一致
