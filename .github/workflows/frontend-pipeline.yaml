@@ -99,10 +99,11 @@ jobs:
           IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
         run: |
           cd deploy/k8s/overlays/dev
+          kustomize build .
           kustomize edit set image frontend-img=${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
           kustomize build . | kubectl apply -f -
-
           kubectl rollout status deployment/hy-frontend -n ${{ env.NAMESPACE_DEV }}
+          git checkout kustomization.yaml
 
   # =================== job3：部署QA环境：需要人工approve，dev分支构建完成后等待审批 ===================
   qa:
@@ -132,8 +133,7 @@ jobs:
           kubectl kustomize deploy/k8s/overlays/qa \
             --image FRONTEND_IMAGE_ADDR=${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} \
             | kubectl apply -f -
-
-          kubectl rollout status deployment/hy-portal-site -n ${{ env.NAMESPACE_QA }}
+          kubectl rollout status deployment/hy-frontend -n ${{ env.NAMESPACE_QA }}
 
   # =================== job4：部署PROD环境：main分支触发，人工审批 ===================
   prod:
@@ -164,4 +164,4 @@ jobs:
             --image FRONTEND_IMAGE_ADDR=${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} \
             | kubectl apply -f -
 
-          kubectl rollout status deployment/hy-portal-site -n ${{ env.NAMESPACE_PROD }}
+          kubectl rollout status deployment/hy-frontend -n ${{ env.NAMESPACE_PROD }}
