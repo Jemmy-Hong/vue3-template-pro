@@ -74,7 +74,7 @@ jobs:
       IMAGE_TAG: ${{ env.IMAGE_TAG }}
 
   # =================== job2：部署DEV环境：dev分支触发，无需审批 ===================
-  deploy-dev:
+  dev:
     needs: build
     if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
@@ -105,8 +105,8 @@ jobs:
           kubectl rollout status deployment/hy-portal-site -n ${{ env.NAMESPACE_DEV }}
 
   # =================== job3：部署QA环境：需要人工approve，dev分支构建完成后等待审批 ===================
-  deploy-qa:
-    needs: build
+  qa:
+    needs: dev
     if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     environment: qa # qa环境配置required‑reviewers，流水线在这里暂停等待人审批
@@ -136,8 +136,8 @@ jobs:
           kubectl rollout status deployment/hy-portal-site -n ${{ env.NAMESPACE_QA }}
 
   # =================== job4：部署PROD环境：main分支触发，人工审批 ===================
-  deploy-prod:
-    needs: build
+  prod:
+    needs: qa
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: prod # prod环境开启人工审批
