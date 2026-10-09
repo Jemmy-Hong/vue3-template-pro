@@ -10,38 +10,43 @@ on:
 env:
   AWS_REGION: ap-southeast-1 # 和你的ACM、EKS、ECR同一个region
   ECR_REPOSITORY: hy-frontend-repo # 你的ECR仓库名称
-  EKS_CLUSTER_NAME: eks-demo # ⚠️替换成你的EKS集群名字
-  NAMESPACE: default # 和ingress/service/deployment同一个namespace
+  EKS_CLUSTER_DEV: eks-demo # ⚠️替换成你的EKS集群名字
+  EKS_CLUSTER_QA: eks-demo # ⚠️替换成你的EKS集群名字
+  EKS_CLUSTER_PROD: eks-prod # ⚠️替换成你的EKS集群名字
+  NAMESPACE_DEV: dev # 和ingress/service/deployment同一个namespace
+  NAMESPACE_QA: qa # 和ingress/service/deployment同一个namespace
+  NAMESPACE_PROD: prod # 和ingress/service/deployment同一个namespace
   IMAGE_TAG: ${{ github.sha }} # 使用git commit sha作为镜像tag，便于追溯
 
 jobs:
-  build-and-deploy:
+  # =================== job1：构建镜像，所有分支都会执行 ===================
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ============新增：pnpm + node 打包，适配pnpm-lock.yaml============
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          # 删掉cache: npm，改用pnpm的cache action
+
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 9
+
       - name: Cache pnpm modules
         uses: actions/cache@v4
         with:
           path: ~/.local/share/pnpm/store
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-      - name: Lint & Build Vue Project
+
+      - name: Build Vue Project
         run: |
           pnpm install
           pnpm run build
-      # ======================================================================
-      # 配置AWS凭证，密钥存放在Github仓库 Secrets
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -49,28 +54,114 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 获取ECR登录密码，登录docker
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # 构建 & 推送镜像到ECR
-      - name: Build, tag, and push docker image to Amazon ECR
+      # 输出镜像registry给下游部署job使用
+      - name: Export registry output
+        id: export-registry
+        run: echo "ECR_REGISTRY=${{ steps.login-ecr.outputs.registry }}" >> $GITHUB_OUTPUT
+
+      - name: Build & Push Docker image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:${{ env.IMAGE_TAG }} -f deploy/docker/Dockerfile .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:${{ env.IMAGE_TAG }}
+    outputs:
+      ECR_REGISTRY: ${{ steps.export-registry.outputs.ECR_REGISTRY }}
+      IMAGE_TAG: ${{ env.IMAGE_TAG }}
 
-      # 获取EKS kubeconfig，让kubectl可以操作集群
+  # =================== job2：部署DEV环境：dev分支触发，无需审批 ===================
+  deploy-dev:
+    needs: build
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    environment: dev # github environment，dev环境不设置审批人，自动执行
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Update kubeconfig for EKS
-        run: |
-          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_DEV }} --region ${{ env.AWS_REGION }}
 
-      # 更新Deployment镜像，滚动更新Pod
-      - name: Deploy new image to EKS
+      - name: Deploy to dev overlay
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REGISTRY: ${{ needs.build.outputs.ECR_REGISTRY }}
+          IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
         run: |
-          kubectl set image deployment/hy-frontend-deploy hy-frontend-container=$ECR_REGISTRY/$ECR_REPOSITORY:${{ env.IMAGE_TAG }} -n ${{ env.NAMESPACE }}
-          kubectl rollout status deployment/hy-frontend-deploy -n ${{ env.NAMESPACE }}
+          kubectl kustomize deploy/k8s/overlays/dev \
+            --image placeholder-frontend-image=${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} \
+            | kubectl apply -f -
+
+          kubectl rollout status deployment/hy-portal-site -n ${{ env.NAMESPACE_DEV }}
+
+  # =================== job3：部署QA环境：需要人工approve，dev分支构建完成后等待审批 ===================
+  deploy-qa:
+    needs: build
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    environment: qa # qa环境配置required‑reviewers，流水线在这里暂停等待人审批
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_QA }} --region ${{ env.AWS_REGION }}
+
+      - name: Deploy to qa overlay
+        env:
+          ECR_REGISTRY: ${{ needs.build.outputs.ECR_REGISTRY }}
+          IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
+        run: |
+          kubectl kustomize deploy/k8s/overlays/qa \
+            --image placeholder-frontend-image=${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} \
+            | kubectl apply -f -
+
+          kubectl rollout status deployment/hy-portal-site -n ${{ env.NAMESPACE_QA }}
+
+  # =================== job4：部署PROD环境：main分支触发，人工审批 ===================
+  deploy-prod:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod # prod环境开启人工审批
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_PROD }} --region ${{ env.AWS_REGION }}
+
+      - name: Deploy to prod overlay
+        env:
+          ECR_REGISTRY: ${{ needs.build.outputs.ECR_REGISTRY }}
+          IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
+        run: |
+          kubectl kustomize deploy/k8s/overlays/prod \
+            --image placeholder-frontend-image=${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} \
+            | kubectl apply -f -
+
+          kubectl rollout status deployment/hy-portal-site -n ${{ env.NAMESPACE_PROD }}
