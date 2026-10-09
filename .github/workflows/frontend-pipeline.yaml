@@ -99,8 +99,14 @@ jobs:
           IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
         run: |
           cd deploy/k8s/overlays/dev
-          kustomize build . --image frontend-img=${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG} | kubectl apply -f -
-          kubectl rollout status deployment/hy-frontend -n ${NAMESPACE_DEV}
+          cat > image-patch.yaml << EOF
+          images:
+          - name: frontend-img
+            newName: ${ECR_REGISTRY}/${ECR_REPOSITORY}
+            newTag: ${IMAGE_TAG}
+          EOF
+          kustomize build . image-patch.yaml | kubectl apply -f -
+          kubectl rollout status deployment/hy-frontend -n ${NAMESPACE_QA}
 
   # =================== job3：部署QA环境：需要人工approve，dev分支构建完成后等待审批 ===================
   qa:
