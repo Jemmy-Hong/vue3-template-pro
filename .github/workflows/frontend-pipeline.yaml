@@ -99,7 +99,7 @@ jobs:
           IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
         run: |
           kubectl kustomize deploy/k8s/overlays/dev \
-            --image placeholder-frontend-image=${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} \
+            --image FRONTEND_IMAGE_ADDR=${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} \
             | kubectl apply -f -
 
           kubectl rollout status deployment/hy-portal-site -n ${{ env.NAMESPACE_DEV }}
@@ -130,7 +130,7 @@ jobs:
           IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
         run: |
           kubectl kustomize deploy/k8s/overlays/qa \
-            --image placeholder-frontend-image=${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} \
+            --image FRONTEND_IMAGE_ADDR=${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} \
             | kubectl apply -f -
 
           kubectl rollout status deployment/hy-portal-site -n ${{ env.NAMESPACE_QA }}
@@ -161,7 +161,7 @@ jobs:
           IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
         run: |
           kubectl kustomize deploy/k8s/overlays/prod \
-            --image placeholder-frontend-image=${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} \
+            --image FRONTEND_IMAGE_ADDR=${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} \
             | kubectl apply -f -
 
           kubectl rollout status deployment/hy-portal-site -n ${{ env.NAMESPACE_PROD }}
