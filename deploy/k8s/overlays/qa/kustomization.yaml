@@ -7,8 +7,12 @@ bases:
 namespace: default # kustomize会把所有资源自动注入这个namespace, 真实情况需要改动，首先考察是多集群/单集群多个namespace。
 
 replicas:
-  - name: hy-portal-site
+  - name: hy-frontend
     count: 1
 
 commonLabels:
   environment: qa
+
+images:
+  - name: frontend-img
+    newName: temp-ci-will-override
