@@ -37,10 +37,10 @@ metadata:
     alb.ingress.kubernetes.io/target-type: ip
     # ExternalDNS 自动在Route53添加域名解析（部署ExternalDNS后生效）
     external-dns.alpha.kubernetes.io/hostname: dev-front.kellyclould.com
-    external-dns.alpha.kubernetes.io/ingress-class: alb
+    external-dns.alpha.kubernetes.io/ingress-class: my-aws-ingress-class
 spec:
   # ✅新版推荐，替代废弃的 kubernetes.io/ingress.class: "alb"
-  ingressClassName: alb
+  ingressClassName: my-aws-ingress-class
   rules:
     - host: dev-front.kellyclould.com # 👉替换为业务真实域名，域名需要DNS解析指向ALB
       http:
