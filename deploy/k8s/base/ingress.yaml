@@ -35,7 +35,7 @@ spec:
   # ✅新版推荐，替代废弃的 kubernetes.io/ingress.class: "alb"
   ingressClassName: alb
   rules:
-    - host: portal.example.com # 👉替换为业务真实域名，域名需要DNS解析指向ALB
+    - host: hy.front.kellyclould.com # 👉替换为业务真实域名，域名需要DNS解析指向ALB
       http:
         paths:
           - path: /
