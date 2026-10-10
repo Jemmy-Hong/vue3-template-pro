@@ -20,7 +20,7 @@ metadata:
     # 监听端口：同时开启HTTP80、HTTPS443
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}, {"HTTP":80}]'
     # 【必须替换】AWS ACM证书ARN，必须是和ALB同一个region申请的证书！跨区证书不生效
-    alb.ingress.kubernetes.io/certificate-arn: "alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:650708167380:certificate/f3ede8cb-fc3f-46f9-984e-9cac7e5a705b"
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-southeast-1:650708167380:certificate/f3ede8cb-fc3f-46f9-984e-9cac7e5a705b"
     # HTTP 80 请求强制重定向跳转到 HTTPS 443，生产环境建议打开
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     # 健康检查配置：ALB会访问pod做健康检查，前端nginx用GET /
