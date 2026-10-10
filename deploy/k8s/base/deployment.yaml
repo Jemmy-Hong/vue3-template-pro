@@ -17,7 +17,7 @@ metadata:
     app.kubernetes.io/part-of: hy-business            # 属于哪个大业务系统
     environment: ${ENV}                            # 环境标识 dev/test/prod，CI注入变量
 spec:
-  replicas: DEPLOYMENT_REPLICAS   # pod副本数量，由CI流水线替换，不要硬编码写死
+  # 副本数交给overlay覆盖
   # apps/v1版本Deployment强制必填！selector标签必须和pod模板labels保持一致，否则报错
   selector:
     matchLabels:
@@ -41,17 +41,16 @@ spec:
         app.kubernetes.io/instance: hy-frontend
         app.kubernetes.io/component: frontend
         app.kubernetes.io/part-of: hy-business
-        environment: ${ENV}
     spec:
       # 优雅关闭等待时间【前端nginx推荐10s】
       # pod删除时，k8s会等待该时长再强制杀容器；nginx关闭很快，不需要后端那种30/60s
       terminationGracePeriodSeconds: 10
       containers:
       - name: hy-frontend
-        image: 168824777132.dkr.ecr.ap-southeast-1.amazonaws.com/hy-frontend:TAG
+        image: frontend-img
         imagePullPolicy: IfNotPresent  # 本地有镜像就不拉，没有才拉；私有ECR镜像推荐这个配置
         ports:
-        - containerPort: 9302  # 容器内部nginx监听端口，和Dockerfile暴露端口保持一致
+        - containerPort: 3030  # 容器内部nginx监听端口，和Dockerfile暴露端口保持一致
           name: http           # 给端口起名字，后面探针/service直接引用名字，不用写数字，便于维护
         # ----------------------------------------------------------------------
         # resources资源配置【生产环境必须配置，绝对不要省略】

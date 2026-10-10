@@ -1,0 +1,224 @@
+# ==============================================================================
+# 文件: .github/workflows/frontend-pipeline.yaml
+# 用途: Vue3前端项目CI/CD流水线，Github Actions + AWS ECR + EKS + Kustomize
+# 流程：构建镜像(前端打包+docker构建+镜像扫描+推送ECR) → 部署dev(自动) → 审批后部署qa → 审批后部署prod
+# 架构说明：
+#   dev/qa 共用同一个EKS集群eks-demo，使用不同namespace(dev/qa)隔离
+#   prod 使用独立EKS集群eks-prod，prod命名空间
+#   使用Kustomize多环境overlay管理k8s资源，一套base模板，多环境补丁
+# 触发规则：push到dev/main分支自动触发；支持页面手动触发workflow_dispatch
+# ==============================================================================
+name: Frontend Vue3 CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, dev] # 你实际部署分支，可改成master
+  # 可开启pull_request做测试，pr到dev分支触发流水线做验证
+  pull_request:
+    branches: [dev]
+  # 支持在Github页面手动触发流水线，用于测试
+  workflow_dispatch:
+
+# 全局环境变量，全流水线共享
+env:
+  AWS_REGION: ap-southeast-1 # 和你的ACM、EKS、ECR同一个region
+  ECR_REPOSITORY: hy-frontend-repo # 你的ECR仓库名称
+  EKS_CLUSTER_DEV: eks-demo # ⚠️替换成你的EKS集群名字，dev环境集群
+  EKS_CLUSTER_QA: eks-demo # ⚠️替换成你的EKS集群名字，qa和dev共用集群
+  EKS_CLUSTER_PROD: eks-prod # ⚠️替换成你的EKS集群名字，prod独立集群
+  NAMESPACE_DEV: dev # 和ingress/service/deployment同一个namespace
+  NAMESPACE_QA: qa # 和ingress/service/deployment同一个namespace
+  NAMESPACE_PROD: prod # 和ingress/service/deployment同一个namespace
+  IMAGE_TAG: ${{ github.sha }} # 使用git commit sha作为镜像tag，便于追溯镜像版本
+
+jobs:
+  # =================== job1：构建镜像，所有分支都会执行 ===================
+  build:
+    runs-on: ubuntu-latest # 使用Ubuntu虚拟机作为流水线运行环境
+    steps:
+      # 1. 检出代码(必须，拉取当前仓库源码，用于前端打包和构建docker镜像)
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 安装Node运行环境，Vue3项目打包依赖node
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 3. 安装pnpm包管理器，项目使用pnpm管理依赖
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      # 4. 缓存pnpm依赖包，加速流水线下次构建，减少重复下载依赖耗时
+      - name: Cache pnpm modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      # 5. 执行前端依赖安装 + Vue项目打包，生成dist静态资源，用于后续docker镜像打包
+      - name: Build Vue Project
+        run: |
+          pnpm install
+          pnpm run build
+
+      # 6. 配置AWS临时凭证，当前使用AK/SK模式；生产环境推荐替换成OIDC联邦认证，不在GitHub存储长期AK/SK
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 7. 登录AWS ECR镜像仓库，后续才能推送构建好的docker镜像
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 8. 提取ECR Registry地址，保存到output输出变量，传递给下游部署job使用
+      - name: Export registry output
+        id: export-registry
+        run: echo "ECR_REGISTRY=${{ steps.login-ecr.outputs.registry }}" >> $GITHUB_OUTPUT
+
+      # 9. 构建Docker镜像，读取项目dist静态资源，基于Dockerfile打包前端Nginx镜像
+      - name: Build Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:${{ env.IMAGE_TAG }} -f deploy/docker/Dockerfile .
+
+      # 10. 可选：镜像漏洞扫描，企业流水线标准环节，不需要就直接删除这一段
+      # 使用trivy扫描镜像高危/严重漏洞，漏洞不通过则job失败，不会继续推送镜像，安全左移
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
+
+      # 11. 将构建完成的前端镜像推送到ECR镜像仓库保存，供EKS部署拉取
+      - name: Push Docker image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:${{ env.IMAGE_TAG }}
+    # 输出变量，传递给下游部署job使用
+    outputs:
+      ECR_REGISTRY: ${{ steps.export-registry.outputs.ECR_REGISTRY }}
+      IMAGE_TAG: ${{ env.IMAGE_TAG }}
+
+  # =================== job2：部署DEV环境：dev分支触发，无需审批 ===================
+  dev:
+    needs: build # 等待build镜像job执行完成
+    # 条件：仅dev分支执行；workflow_dispatch手动触发时也允许执行
+    if: github.ref == 'refs/heads/dev' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: dev # github environment，dev环境不设置审批人，自动执行
+    steps:
+      # 检出代码，读取k8s kustomize yaml资源文件
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 配置AWS凭证，用于调用eks api更新kubeconfig
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 更新kubeconfig配置，把EKS集群信息写入kubeconfig，kubectl才能操作目标EKS集群
+      - name: Update kubeconfig for EKS
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_DEV }} --region ${{ env.AWS_REGION }}
+
+      # 部署资源到dev环境overlay
+      - name: Deploy to dev overlay
+        env:
+          ECR_REGISTRY: ${{ needs.build.outputs.ECR_REGISTRY }}
+          IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
+        run: |
+          cd deploy/k8s/overlays/dev
+          # 使用kustomize原生命令修改镜像，推荐方式，避免sed替换yaml出错
+          kustomize edit set image frontend-img=${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+          # 渲染kustomize资源并应用到集群
+          kustomize build . | kubectl apply -f -
+          # 等待deployment滚动更新完成，确认pod就绪
+          kubectl rollout status deployment/hy-portal-site -n ${NAMESPACE_DEV}
+
+  # =================== job3：部署QA环境：需要人工approve，dev部署成功后等待审批 ===================
+  qa:
+    needs: dev # 串行：必须dev部署成功之后，才会进入qa审批等待
+    # 条件：仅dev分支 / 手动触发时可执行
+    if: github.ref == 'refs/heads/dev' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: qa # qa环境配置required-reviewers，流水线在这里暂停等待人审批
+    steps:
+      # 检出代码，读取k8s kustomize yaml资源文件
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 配置AWS凭证，用于调用eks api更新kubeconfig
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 更新kubeconfig配置，连接QA所在EKS集群
+      - name: Update kubeconfig for EKS
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_QA }} --region ${{ env.AWS_REGION }}
+
+      # 部署资源到qa环境overlay
+      - name: Deploy to qa overlay
+        env:
+          ECR_REGISTRY: ${{ needs.build.outputs.ECR_REGISTRY }}
+          IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
+        run: |
+          cd deploy/k8s/overlays/qa
+          # 和dev保持统一，使用kustomize原生修改镜像
+          kustomize edit set image frontend-img=${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+          kustomize build . | kubectl apply -f -
+          # 等待滚动发布完成
+          kubectl rollout status deployment/hy-portal-site -n ${env.NAMESPACE_QA}
+
+  # =================== job4：部署PROD环境：main分支触发，人工审批 ===================
+  prod:
+    needs: qa # 串行：必须qa部署成功，审批通过后，才到prod审批
+    # 条件：main分支触发，或者手动触发；生产环境仅main分支合并才走这里
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: prod # prod环境开启人工审批
+    steps:
+      # 检出代码，读取k8s kustomize yaml资源文件
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 配置AWS凭证，用于调用eks api更新kubeconfig
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 更新kubeconfig配置，连接prod独立EKS集群
+      - name: Update kubeconfig for EKS
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_PROD }} --region ${{ env.AWS_REGION }}
+
+      # 部署资源到prod环境overlay
+      - name: Deploy to prod overlay
+        env:
+          ECR_REGISTRY: ${{ needs.build.outputs.ECR_REGISTRY }}
+          IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
+        run: |
+          cd deploy/k8s/overlays/prod
+          # 统一使用kustomize edit，三个环境部署写法完全一致
+          kustomize edit set image frontend-img=${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+          kustomize build . | kubectl apply -f -
+          # 等待生产环境滚动更新完成
+          kubectl rollout status deployment/hy-portal-site -n ${env.NAMESPACE_PROD}

@@ -5,7 +5,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: hy-frontend-ingress # 👈 统一用hy-前缀
-  namespace: default # 和service、deployment保持namespace一致
+  namespace: dev # 和service、deployment保持namespace一致
   labels:
     app.kubernetes.io/name: hy-frontend # 👈 统一
     app.kubernetes.io/component: frontend
@@ -20,20 +20,29 @@ metadata:
     # 监听端口：同时开启HTTP80、HTTPS443
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}, {"HTTP":80}]'
     # 【必须替换】AWS ACM证书ARN，必须是和ALB同一个region申请的证书！跨区证书不生效
-    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-southeast-1::certificate:替换为目标环境ACM证书ARN"
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-southeast-1:650708167380:certificate/f3ede8cb-fc3f-46f9-984e-9cac7e5a705b"
     # HTTP 80 请求强制重定向跳转到 HTTPS 443，生产环境建议打开
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     # 健康检查配置：ALB会访问pod做健康检查，前端nginx用GET /
     alb.ingress.kubernetes.io/healthcheck-path: "/"
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
-    alb.ingress.kubernetes.io/healthcheck-interval-seconds: 10
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "10"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+    alb.ingress.kubernetes.io/success-codes: "200"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "2"
     # 可选：自定义ALB安全组；不写会自动创建，企业合规环境经常需要指定已有安全组
-#    alb.ingress.kubernetes.io/security-groups: sg-xxxx
+    # alb.ingress.kubernetes.io/security-groups: sg-xxxx
+    # ALB目标类型：ip=pod，instance=节点；EKS集群推荐ip
+    alb.ingress.kubernetes.io/target-type: ip
+    # ExternalDNS 自动在Route53添加域名解析（部署ExternalDNS后生效）
+    external-dns.alpha.kubernetes.io/hostname: dev-front.kellyclould.com
+    external-dns.alpha.kubernetes.io/ingress-class: my-aws-ingress-class
 spec:
   # ✅新版推荐，替代废弃的 kubernetes.io/ingress.class: "alb"
-  ingressClassName: alb
+  ingressClassName: my-aws-ingress-class
   rules:
-    - host: portal.example.com # 👉替换为业务真实域名，域名需要DNS解析指向ALB
+    - host: dev-front.kellyclould.com # 👉替换为业务真实域名，域名需要DNS解析指向ALB
       http:
         paths:
           - path: /
