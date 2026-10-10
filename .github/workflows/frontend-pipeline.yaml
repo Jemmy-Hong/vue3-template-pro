@@ -125,6 +125,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Install kustomize v5.4.2
+        run: |
+          curl -s https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh | bash -s 5.4.2
+          mv kustomize /usr/local/bin/kustomize
+          kustomize version
+
       - name: Update kubeconfig for EKS
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_QA }} --region ${{ env.AWS_REGION }}
 
@@ -154,6 +160,12 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install kustomize v5.4.2
+        run: |
+          curl -s https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh | bash -s 5.4.2
+          mv kustomize /usr/local/bin/kustomize
+          kustomize version
 
       - name: Update kubeconfig for EKS
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_PROD }} --region ${{ env.AWS_REGION }}
