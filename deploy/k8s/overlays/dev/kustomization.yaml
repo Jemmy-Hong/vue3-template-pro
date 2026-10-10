@@ -9,12 +9,14 @@ namespace: dev # kustomize会把所有资源自动注入这个namespace, 真实�
 
 # dev副本数
 replicas:
-  - name: hy-frontend
+  - name: hy-portal-site
     count: 1
 
 # 给资源打上环境标签 dev
-commonLabels:
-  environment: dev
+labels:
+  - includeTemplates: true
+    pairs:
+      environment: dev
 
 images:
   - name: frontend-img
