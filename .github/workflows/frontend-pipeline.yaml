@@ -90,12 +90,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Install kustomize v5.4.2
-        run: |
-          curl -s https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh | bash -s 5.4.2
-          mv kustomize /usr/local/bin/kustomize
-          kustomize version
-
       - name: Update kubeconfig for EKS
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_DEV }} --region ${{ env.AWS_REGION }}
 
@@ -105,7 +99,8 @@ jobs:
           IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
         run: |
           cd deploy/k8s/overlays/dev
-          kustomize build . --image frontend-img=${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG} | kubectl apply -f -
+          kustomize edit set image frontend-img=${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+          kustomize build . | kubectl apply -f -
           kubectl rollout status deployment/hy-frontend -n ${NAMESPACE_DEV}
 
   # =================== job3：部署QA环境：需要人工approve，dev分支构建完成后等待审批 ===================
