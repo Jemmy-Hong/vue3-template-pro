@@ -90,6 +90,11 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Install kustomize v5.4.2
+        uses: azure/setup-kustomize@v3
+        with:
+          kustomize-version: v5.4.2
+
       - name: Update kubeconfig for EKS
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_DEV }} --region ${{ env.AWS_REGION }}
 
