@@ -91,9 +91,10 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Install kustomize v5.4.2
-        uses: azure/setup-kustomize@v3
-        with:
-          kustomize-version: v5.4.2
+        run: |
+          curl -s https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh | bash -s 5.4.2
+          mv kustomize /usr/local/bin/kustomize
+          kustomize version
 
       - name: Update kubeconfig for EKS
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_DEV }} --region ${{ env.AWS_REGION }}
