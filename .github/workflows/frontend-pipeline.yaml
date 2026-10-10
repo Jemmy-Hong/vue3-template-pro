@@ -119,12 +119,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Install kustomize v5.4.2
-        run: |
-          curl -s https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh | bash -s 5.4.2
-          mv kustomize /usr/local/bin/kustomize
-          kustomize version
-
       - name: Update kubeconfig for EKS
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_QA }} --region ${{ env.AWS_REGION }}
 
@@ -133,9 +127,7 @@ jobs:
           ECR_REGISTRY: ${{ needs.build.outputs.ECR_REGISTRY }}
           IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
         run: |
-          kubectl kustomize deploy/k8s/overlays/qa \
-            --image FRONTEND_IMAGE_ADDR=${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} \
-            | kubectl apply -f -
+          kustomize build . | sed "s|frontend-img|${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}|g" | kubectl apply -f -
           kubectl rollout status deployment/hy-frontend -n ${{ env.NAMESPACE_QA }}
 
   # =================== job4：部署PROD环境：main分支触发，人工审批 ===================
@@ -155,12 +147,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Install kustomize v5.4.2
-        run: |
-          curl -s https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh | bash -s 5.4.2
-          mv kustomize /usr/local/bin/kustomize
-          kustomize version
-
       - name: Update kubeconfig for EKS
         run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_PROD }} --region ${{ env.AWS_REGION }}
 
@@ -169,8 +155,5 @@ jobs:
           ECR_REGISTRY: ${{ needs.build.outputs.ECR_REGISTRY }}
           IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
         run: |
-          kubectl kustomize deploy/k8s/overlays/prod \
-            --image FRONTEND_IMAGE_ADDR=${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG} \
-            | kubectl apply -f -
-
+          kustomize build . | sed "s|frontend-img|${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}|g" | kubectl apply -f -
           kubectl rollout status deployment/hy-frontend -n ${{ env.NAMESPACE_PROD }}
