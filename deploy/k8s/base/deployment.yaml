@@ -15,7 +15,6 @@ metadata:
     app.kubernetes.io/instance: hy-frontend   # 实例名称，一套部署一个instance
     app.kubernetes.io/component: frontend         # 组件类型：frontend/backend/db
     app.kubernetes.io/part-of: hy-business            # 属于哪个大业务系统
-    environment: ${ENV}                            # 环境标识 dev/test/prod，CI注入变量
 spec:
   # 副本数交给overlay覆盖
   # apps/v1版本Deployment强制必填！selector标签必须和pod模板labels保持一致，否则报错
