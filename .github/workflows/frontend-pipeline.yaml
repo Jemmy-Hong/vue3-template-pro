@@ -204,7 +204,7 @@ jobs:
           kustomize build . | kubectl apply -f -
           # 等待deployment滚动更新完成，确认pod就绪
           # 等待滚动发布完成
-          kubectl rollout status deployment/hy-portal-site -n ${env.NAMESPACE_QA}
+          kubectl rollout status deployment/hy-portal-site -n ${NAMESPACE_QA}
 
   # =================== job4：部署PROD环境：main分支触发，人工审批 ===================
   prod:
@@ -243,4 +243,4 @@ jobs:
           kustomize edit set image frontend-img=${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}
           kustomize build . | kubectl apply -f -
           # 等待生产环境滚动更新完成
-          kubectl rollout status deployment/hy-portal-site -n ${env.NAMESPACE_PROD}
+          kubectl rollout status deployment/hy-portal-site -n ${NAMESPACE_PROD}
