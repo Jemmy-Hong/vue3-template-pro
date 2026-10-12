@@ -10,5 +10,8 @@ replicas:
   - name: hy-portal-site
     count: 1
 
-commonLabels:
-  environment: qa
+# 给资源打上环境标签 qa
+labels:
+  - includeTemplates: true
+    pairs:
+      environment: qa

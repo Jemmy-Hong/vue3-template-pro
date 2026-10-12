@@ -22,6 +22,8 @@ on:
 # 全局环境变量，全流水线共享
 env:
   AWS_REGION: ap-southeast-1 # 和你的ACM、EKS、ECR同一个region
+  AWS_ACCOUNT_ID: 650708167380 # 替换成你的aws账号ID
+  ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
   ECR_REPO: hy-frontend-repo # 你的ECR仓库名称
   EKS_CLUSTER_DEV: eks-demo # ⚠️替换成你的EKS集群名字，dev环境集群
   EKS_CLUSTER_QA: eks-demo # ⚠️替换成你的EKS集群名字，qa和dev共用集群
@@ -106,10 +108,10 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           docker push $ECR_REGISTRY/$ECR_REPO:${{ env.IMAGE_TAG }}
-    # 输出变量，传递给下游部署job使用
-    outputs:
-      ECR_REGISTRY: ${{ steps.export-registry.outputs.ECR_REGISTRY }}
-      IMAGE_TAG: ${{ env.IMAGE_TAG }}
+    # 输出变量，传递给下游部署job使用 (不用了，直接写死比较好，仓库地址一经创建就不会改变)
+    # outputs:
+    #   ECR_REGISTRY: ${{ steps.export-registry.outputs.ECR_REGISTRY }}
+    #   IMAGE_TAG: ${{ env.IMAGE_TAG }}
 
   # =================== job2：部署DEV环境：dev分支触发，无需审批 ===================
   dev:
@@ -139,12 +141,9 @@ jobs:
 
       # 部署资源到dev环境overlay
       - name: Deploy to dev overlay
-        env:
-          ECR_REGISTRY: ${{ needs.build.outputs.ECR_REGISTRY }}
-          IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
         run: |
           cd deploy/k8s/overlays/${{ env.ENV_NAME }}
-          FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
+          FULL_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${{ env.IMAGE_TAG }}"
           echo "✅ Full image address: $FULL_IMAGE"
           # trap：无论脚本正常结束 / 异常退出，都执行git checkout恢复原始yaml
           trap 'git checkout kustomization.yaml' EXIT
@@ -156,7 +155,7 @@ jobs:
           # 应用资源到集群
           kustomize build . | kubectl apply -f -
           # 等待deployment滚动更新完成，确认pod就绪
-          kubectl rollout status deployment/hy-portal-site -n ${NAMESPACE_DEV}
+          kubectl rollout status deployment/hy-portal-site -n ${{ env.NAMESPACE_DEV }}
 
   # =================== job3：部署QA环境：需要人工approve，dev部署成功后等待审批 ===================
   qa:
@@ -186,12 +185,9 @@ jobs:
 
       # 部署资源到qa环境overlay
       - name: Deploy to qa overlay
-        env:
-          ECR_REGISTRY: ${{ needs.build.outputs.ECR_REGISTRY }}
-          IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
         run: |
           cd deploy/k8s/overlays/${{ env.ENV_NAME }}
-          FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
+          FULL_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${{ env.IMAGE_TAG }}"
           echo "✅ Full image address: $FULL_IMAGE"
           # trap：无论脚本正常结束 / 异常退出，都执行git checkout恢复原始yaml
           trap 'git checkout kustomization.yaml' EXIT
@@ -204,7 +200,7 @@ jobs:
           kustomize build . | kubectl apply -f -
           # 等待deployment滚动更新完成，确认pod就绪
           # 等待滚动发布完成
-          kubectl rollout status deployment/hy-portal-site -n ${NAMESPACE_QA}
+          kubectl rollout status deployment/hy-portal-site -n ${{ env.NAMESPACE_QA }}
 
   # =================== job4：部署PROD环境：main分支触发，人工审批 ===================
   prod:
@@ -214,7 +210,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: prod # prod环境开启人工审批
     env:
-      ENV_NAME: qa
+      ENV_NAME: prod
     steps:
       # 检出代码，读取k8s kustomize yaml资源文件
       - name: Checkout code
@@ -234,13 +230,19 @@ jobs:
 
       # 部署资源到prod环境overlay
       - name: Deploy to prod overlay
-        env:
-          ECR_REGISTRY: ${{ needs.build.outputs.ECR_REGISTRY }}
-          IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
         run: |
-          cd deploy/k8s/overlays/prod
-          # 统一使用kustomize edit，三个环境部署写法完全一致
-          kustomize edit set image frontend-img=${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}
+          cd deploy/k8s/overlays/${{ env.ENV_NAME }}
+          FULL_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO }}:${{ env.IMAGE_TAG }}"
+          echo "✅ Full image address: $FULL_IMAGE"
+          # trap：无论脚本正常结束 / 异常退出，都执行git checkout恢复原始yaml
+          trap 'git checkout kustomization.yaml' EXIT
+          # 正确命令：kustomize edit set image <imageName>=完整镜像地址
+          kustomize edit set image frontend-image="$FULL_IMAGE"
+          # 打印渲染后的yaml，方便日志排错
+          # echo "==== Rendered k8s yaml ===="
+          # kustomize build .
+          # 应用资源到集群
           kustomize build . | kubectl apply -f -
-          # 等待生产环境滚动更新完成
-          kubectl rollout status deployment/hy-portal-site -n ${NAMESPACE_PROD}
+          # 等待deployment滚动更新完成，确认pod就绪
+          # 等待滚动发布完成
+          kubectl rollout status deployment/hy-portal-site -n ${{ env.NAMESPACE_PROD }}
