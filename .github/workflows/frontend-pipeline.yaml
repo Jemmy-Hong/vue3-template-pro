@@ -22,7 +22,7 @@ on:
 # 全局环境变量，全流水线共享
 env:
   AWS_REGION: ap-southeast-1 # 和你的ACM、EKS、ECR同一个region
-  ECR_REPOSITORY: hy-frontend-repo # 你的ECR仓库名称
+  ECR_REPO: hy-frontend-repo # 你的ECR仓库名称
   EKS_CLUSTER_DEV: eks-demo # ⚠️替换成你的EKS集群名字，dev环境集群
   EKS_CLUSTER_QA: eks-demo # ⚠️替换成你的EKS集群名字，qa和dev共用集群
   EKS_CLUSTER_PROD: eks-prod # ⚠️替换成你的EKS集群名字，prod独立集群
@@ -88,14 +88,14 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:${{ env.IMAGE_TAG }} -f deploy/docker/Dockerfile .
+          docker build -t $ECR_REGISTRY/$ECR_REPO:${{ env.IMAGE_TAG }} -f deploy/docker/Dockerfile .
 
       # 10. 可选：镜像漏洞扫描，企业流水线标准环节，不需要就直接删除这一段
       # 使用trivy扫描镜像高危/严重漏洞，漏洞不通过则job失败，不会继续推送镜像，安全左移
       - name: Scan image for vulnerabilities
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ env.IMAGE_TAG }}
           format: "sarif"
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH"
@@ -105,7 +105,7 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:${{ env.IMAGE_TAG }}
+          docker push $ECR_REGISTRY/$ECR_REPO:${{ env.IMAGE_TAG }}
     # 输出变量，传递给下游部署job使用
     outputs:
       ECR_REGISTRY: ${{ steps.export-registry.outputs.ECR_REGISTRY }}
@@ -240,7 +240,7 @@ jobs:
         run: |
           cd deploy/k8s/overlays/prod
           # 统一使用kustomize edit，三个环境部署写法完全一致
-          kustomize edit set image frontend-img=${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+          kustomize edit set image frontend-img=${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}
           kustomize build . | kubectl apply -f -
           # 等待生产环境滚动更新完成
           kubectl rollout status deployment/hy-portal-site -n ${env.NAMESPACE_PROD}
