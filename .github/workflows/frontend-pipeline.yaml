@@ -22,8 +22,7 @@ on:
 # 全局环境变量，全流水线共享
 env:
   AWS_REGION: ap-southeast-1 # 和你的ACM、EKS、ECR同一个region
-  AWS_ACCOUNT_ID: 650708167380 # 替换成你的aws账号ID
-  ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+  ECR_REGISTRY: 650708167380.dkr.ecr.ap-southeast-1.amazonaws.com
   ECR_REPO: hy-frontend-repo # 你的ECR仓库名称
   EKS_CLUSTER_DEV: eks-demo # ⚠️替换成你的EKS集群名字，dev环境集群
   EKS_CLUSTER_QA: eks-demo # ⚠️替换成你的EKS集群名字，qa和dev共用集群
