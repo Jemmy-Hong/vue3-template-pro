@@ -118,6 +118,8 @@ jobs:
     if: github.ref == 'refs/heads/dev' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: dev # github environment，dev环境不设置审批人，自动执行
+    env:
+      ENV_NAME: dev
     steps:
       # 检出代码，读取k8s kustomize yaml资源文件
       - name: Checkout code
@@ -141,10 +143,17 @@ jobs:
           ECR_REGISTRY: ${{ needs.build.outputs.ECR_REGISTRY }}
           IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
         run: |
-          cd deploy/k8s/overlays/dev
-          # 使用kustomize原生命令修改镜像，推荐方式，避免sed替换yaml出错
-          kustomize edit set image frontend-img=${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
-          # 渲染kustomize资源并应用到集群
+          cd deploy/k8s/overlays/${{ env.ENV_NAME }}
+          FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
+          echo "✅ Full image address: $FULL_IMAGE"
+          # trap：无论脚本正常结束 / 异常退出，都执行git checkout恢复原始yaml
+          trap 'git checkout kustomization.yaml' EXIT
+          # 正确命令：kustomize edit set image <imageName>=完整镜像地址
+          kustomize edit set image frontend-image="$FULL_IMAGE"
+          # 打印渲染后的yaml，方便日志排错
+          # echo "==== Rendered k8s yaml ===="
+          # kustomize build .
+          # 应用资源到集群
           kustomize build . | kubectl apply -f -
           # 等待deployment滚动更新完成，确认pod就绪
           kubectl rollout status deployment/hy-portal-site -n ${NAMESPACE_DEV}
@@ -156,6 +165,8 @@ jobs:
     if: github.ref == 'refs/heads/dev' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: qa # qa环境配置required-reviewers，流水线在这里暂停等待人审批
+    env:
+      ENV_NAME: qa
     steps:
       # 检出代码，读取k8s kustomize yaml资源文件
       - name: Checkout code
@@ -179,10 +190,19 @@ jobs:
           ECR_REGISTRY: ${{ needs.build.outputs.ECR_REGISTRY }}
           IMAGE_TAG: ${{ needs.build.outputs.IMAGE_TAG }}
         run: |
-          cd deploy/k8s/overlays/qa
-          # 和dev保持统一，使用kustomize原生修改镜像
-          kustomize edit set image frontend-img=${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+          cd deploy/k8s/overlays/${{ env.ENV_NAME }}
+          FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
+          echo "✅ Full image address: $FULL_IMAGE"
+          # trap：无论脚本正常结束 / 异常退出，都执行git checkout恢复原始yaml
+          trap 'git checkout kustomization.yaml' EXIT
+          # 正确命令：kustomize edit set image <imageName>=完整镜像地址
+          kustomize edit set image frontend-image="$FULL_IMAGE"
+          # 打印渲染后的yaml，方便日志排错
+          # echo "==== Rendered k8s yaml ===="
+          # kustomize build .
+          # 应用资源到集群
           kustomize build . | kubectl apply -f -
+          # 等待deployment滚动更新完成，确认pod就绪
           # 等待滚动发布完成
           kubectl rollout status deployment/hy-portal-site -n ${env.NAMESPACE_QA}
 
@@ -193,6 +213,8 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: prod # prod环境开启人工审批
+    env:
+      ENV_NAME: qa
     steps:
       # 检出代码，读取k8s kustomize yaml资源文件
       - name: Checkout code

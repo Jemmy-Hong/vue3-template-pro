@@ -17,8 +17,3 @@ labels:
   - includeTemplates: true
     pairs:
       environment: dev
-
-images:
-  - name: frontend-img
-    newName: 650708167380.dkr.ecr.ap-southeast-1.amazonaws.com/hy-frontend-repo
-    newTag: ${IMAGE_TAG}
