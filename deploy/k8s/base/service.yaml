@@ -16,8 +16,6 @@ metadata:
     app.kubernetes.io/component: frontend
     # k8s标准标签：归属哪个大业务系统，监控/日志按业务聚合过滤
     app.kubernetes.io/part-of: hy-business
-    # 环境标记，CI注入 dev/staging/prod，envsubst变量替换
-    environment: ${ENV}
 spec:
   ports:
     # service对外暴露端口：集群内访问service:80

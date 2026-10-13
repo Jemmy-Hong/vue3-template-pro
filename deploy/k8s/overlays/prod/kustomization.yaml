@@ -1,11 +1,13 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# 继承base基础模板
 resources:
   - ../../base
 
 namespace: prod # kustomize会把所有资源自动注入这个namespace, 真实情况需要改动，首先考察是多集群/单集群多个namespace。
 
+# prod副本数
 replicas:
   - name: hy-portal-site
     count: 2
@@ -15,3 +17,22 @@ labels:
   - includeTemplates: true
     pairs:
       environment: prod
+
+# patch：替换Ingress上的证书、域名、external-dns注解
+patches:
+  - target:
+      kind: Ingress
+      name: hy-frontend-ingress
+    patch: |-
+      # 【必须替换】AWS ACM证书ARN,必须是和ALB同一个region申请的证书!跨区证书不生效
+      - op: replace
+        path: /metadata/annotations/alb.ingress.kubernetes.io~1certificate-arn
+        value: "arn:aws:acm:ap-southeast-1:650708167380:certificate/f3ede8cb-fc3f-46f9-984e-9cac7e5a705b"
+      # 👉替换为业务真实域名,域名需要DNS解析指向ALB
+      - op: replace
+        path: /spec/rules/0/host
+        value: prod-front.kellyclould.com
+      # ExternalDNS 自动在Route53添加域名解析(部署ExternalDNS后生效)
+      - op: add
+        path: /metadata/annotations/external-dns.alpha.kubernetes.io~1hostname
+        value: prod-front.kellyclould.com

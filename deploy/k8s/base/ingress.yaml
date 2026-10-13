@@ -19,8 +19,6 @@ metadata:
     #    alb.ingress.kubernetes.io/subnets: subnet-xxxx,subnet-xxxx
     # 监听端口：同时开启HTTP80、HTTPS443
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}, {"HTTP":80}]'
-    # 【必须替换】AWS ACM证书ARN，必须是和ALB同一个region申请的证书！跨区证书不生效
-    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-southeast-1:650708167380:certificate/f3ede8cb-fc3f-46f9-984e-9cac7e5a705b"
     # HTTP 80 请求强制重定向跳转到 HTTPS 443，生产环境建议打开
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     # 健康检查配置：ALB会访问pod做健康检查，前端nginx用GET /
@@ -35,19 +33,16 @@ metadata:
     # alb.ingress.kubernetes.io/security-groups: sg-xxxx
     # ALB目标类型：ip=pod，instance=节点；EKS集群推荐ip
     alb.ingress.kubernetes.io/target-type: ip
-    # ExternalDNS 自动在Route53添加域名解析（部署ExternalDNS后生效）
-    external-dns.alpha.kubernetes.io/hostname: dev-front.kellyclould.com
 spec:
   # ✅新版推荐，替代废弃的 kubernetes.io/ingress.class: "alb"
   ingressClassName: my-aws-ingress-class
   rules:
-    - host: dev-front.kellyclould.com # 👉替换为业务真实域名，域名需要DNS解析指向ALB
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: hy-frontend-svc # 👈【必须】改成你实际service的名字
-                port:
-                  name: http
+    http:
+      paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: hy-frontend-svc # 👈【必须】改成你实际service的名字
+              port:
+                name: http
