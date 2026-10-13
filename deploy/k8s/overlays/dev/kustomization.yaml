@@ -19,5 +19,5 @@ labels:
       environment: dev
 
 # 策略合并补丁：注入当前环境spec.rules域名路由（处理rules数组，避免数组下标坑）
-patchesStrategicMerge:
-  - patch.yaml
+patches:
+  - path: patch.yaml
