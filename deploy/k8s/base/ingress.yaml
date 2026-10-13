@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/component: frontend
   annotations:
     # --------------------------
-    # ALB基础配置
+    # ALB公共基础配置（所有环境dev/qa/prod共用）
     # --------------------------
     # internet-facing=公网ALB，对外给互联网用户访问；内部业务改成 internal
     alb.ingress.kubernetes.io/scheme: internet-facing
@@ -22,27 +22,19 @@ metadata:
     # HTTP 80 请求强制重定向跳转到 HTTPS 443，生产环境建议打开
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     # 健康检查配置：ALB会访问pod做健康检查，前端nginx用GET /
-    alb.ingress.kubernetes.io/healthcheck-path: "/"
-    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
-    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "10"
-    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
-    alb.ingress.kubernetes.io/success-codes: "200"
-    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
-    alb.ingress.kubernetes.io/unhealthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/healthcheck-path: "/" # ALB健康检查访问路径
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP # 健康检查协议
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "10" # 健康检查间隔10秒
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5" # 健康检查超时时间
+    alb.ingress.kubernetes.io/success-codes: "200" # 判定健康的返回码
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2" # 连续2次成功判定为健康
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "2" # 连续2次失败判定不健康
     # 可选：自定义ALB安全组；不写会自动创建，企业合规环境经常需要指定已有安全组
     # alb.ingress.kubernetes.io/security-groups: sg-xxxx
     # ALB目标类型：ip=pod，instance=节点；EKS集群推荐ip
     alb.ingress.kubernetes.io/target-type: ip
+
 spec:
   # ✅新版推荐，替代废弃的 kubernetes.io/ingress.class: "alb"
-  ingressClassName: my-aws-ingress-class
-  rules:
-    http:
-      paths:
-        - path: /
-          pathType: Prefix
-          backend:
-            service:
-              name: hy-frontend-svc # 👈【必须】改成你实际service的名字
-              port:
-                name: http
+  ingressClassName: my-aws-ingress-class # 固定ALB ingress class名称
+  # ⚠️ base这里不写 spec.rules！域名和路由交给overlay补丁文件单独维护

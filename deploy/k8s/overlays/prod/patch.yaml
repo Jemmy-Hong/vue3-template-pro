@@ -1,0 +1,24 @@
+# overlays/prod/patch.yaml
+# StrategicMerge补丁，完整Ingress片段：环境专属注解 + 域名路由
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hy-frontend-ingress
+  annotations:
+    # ACM HTTPS证书ARN
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-southeast-1:650708167380:certificate/f3ede8cb-fc3f-46f9-984e-9cac7e5a705b"
+    # external‑dns自动在Route53添加解析记录
+    external-dns.alpha.kubernetes.io/hostname: "prod-front.kellycloud.com"
+spec:
+  # prod环境域名与路由规则
+  rules:
+    - host: prod-front.kellyclould.com # prod环境域名
+      http:
+        paths:
+          - path: / # 匹配根路径所有请求
+            pathType: Prefix # 前缀匹配
+            backend:
+              service:
+                name: hy-frontend-svc # 转发到前端service名称
+                port:
+                  name: http # service端口名称
