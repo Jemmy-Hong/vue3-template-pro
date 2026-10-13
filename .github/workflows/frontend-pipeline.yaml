@@ -45,7 +45,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       # 3. 安装pnpm包管理器，项目使用pnpm管理依赖
       - name: Install pnpm
